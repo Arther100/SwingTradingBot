@@ -63,7 +63,7 @@ class SetupConfig(BaseModel):
     """Configuration for setup generation."""
 
     max_setups: int = Field(default=5, description="Maximum setups to generate")
-    min_confidence: float = Field(default=6.0, description="Minimum confidence score")
+    min_confidence: float = Field(default=7.0, description="Minimum confidence score")
     max_candidates: int = Field(default=10, description="Max stocks to evaluate")
     cache_ttl_minutes: int = Field(default=30, description="Cache TTL for setup reasoning")
     price_change_threshold_pct: float = Field(

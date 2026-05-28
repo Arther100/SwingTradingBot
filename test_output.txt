@@ -1,0 +1,154 @@
+[FII/DII] Unexpected error: 'utf-8' codec can't decode byte 0x80 in position 3: invalid start byte
+[FII/DII] NSE API unreachable ΓÇö no FII/DII data today.
+[Earnings] Unexpected error: 'utf-8' codec can't decode byte 0xa1 in position 1: invalid start byte
+[Earnings] NSE announcements API unreachable.
+Traceback (most recent call last):
+  File "D:\Vijay\swing_advisor_bot\test_fii_earnings.py", line 351, in test_setup_blocking
+    no_block = screener._check_earnings_block("TCS", None)
+  File "D:\Vijay\swing_advisor_bot\module4_setup_generator\technical\stock_screener.py", line 259, in _check_earnings_block
+    event = earnings_calendar.get(ticker.upper())
+            ^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'NoneType' object has no attribute 'get'
+[Pinecone] Failed to connect: No module named 'pinecone'. Semantic search disabled.
+[MorningBrief] Pipeline error: 'UserProfile' object has no attribute 'display_name'
+Traceback (most recent call last):
+  File "D:\Vijay\swing_advisor_bot\module6_reports\reports\morning_brief.py", line 96, in generate_morning_brief
+    f"[MorningBrief] Profile loaded: {profile.display_name}, "
+                                      ^^^^^^^^^^^^^^^^^^^^
+  File "D:\Vijay\swing_advisor_bot\.venv\Lib\site-packages\pydantic\main.py", line 1026, in __getattr__
+    raise AttributeError(f'{type(self).__name__!r} object has no attribute {item!r}')
+AttributeError: 'UserProfile' object has no attribute 'display_name'
+Kite access token has expired. Daily re-authentication required. Use get_login_url() to start the login flow.
+Kite access token has expired. Daily re-authentication required. Use get_login_url() to start the login flow.
+Traceback (most recent call last):
+  File "D:\Vijay\swing_advisor_bot\module1_data_layer\fetchers\vix_fetcher.py", line 152, in fetch_vix_and_indices
+    kite = await kite_auth_manager.get_authenticated_client()
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\Vijay\swing_advisor_bot\module1_data_layer\auth\kite_auth.py", line 371, in get_authenticated_client
+    raise KiteAuthError(
+    ...<8 lines>...
+    )
+module1_data_layer.models.KiteAuthError: [KiteAuthError] Kite access token expired or invalid ΓÇö daily re-authentication required. Complete the login flow:
+  1. Open this URL in browser: https://kite.zerodha.com/connect/login?api_key=gzem2leocygdb726&v=3
+  2. Log in with Zerodha credentials.
+  3. Copy the request_token from the redirect URL.
+  4. Call: kite_auth_manager.set_access_token_from_request_token('<token>')
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "D:\Vijay\swing_advisor_bot\test_fii_earnings.py", line 466, in test_full_pipeline
+    market_data = await run_data_pipeline(tickers=TICKERS, config=config)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\Vijay\swing_advisor_bot\module1_data_layer\pipeline.py", line 576, in run_data_pipeline
+    vix_data = await fetch_vix_and_indices(config)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\Vijay\swing_advisor_bot\module1_data_layer\fetchers\vix_fetcher.py", line 285, in fetch_vix_and_indices
+    raise DataFetchError(
+    ...<3 lines>...
+    ) from e
+module1_data_layer.models.DataFetchError: [DataFetchError] Source: KiteConnect ΓÇö Unexpected error fetching VIX and indices: KiteAuthError: [KiteAuthError] Kite access token expired or invalid ΓÇö daily re-authentication required. Complete the login flow:
+  1. Open this URL in browser: https://kite.zerodha.com/connect/login?api_key=gzem2leocygdb726&v=3
+  2. Log in with Zerodha credentials.
+  3. Copy the request_token from the redirect URL.
+  4. Call: kite_auth_manager.set_access_token_from_request_token('<token>'). Review logs for root cause. VIX is mandatory ΓÇö pipeline cannot proceed.
+
+============================================================
+  TEST 1 ΓÇö NSE Session Manager
+============================================================
+  Headers keys: ['User-Agent', 'Accept', 'Accept-Language', 'Accept-Encoding', 'Referer', 'Connection', 'DNT', 'Sec-Fetch-Dest', 'Sec-Fetch-Mode', 'Sec-Fetch-Site']
+  Cookies count: 2
+  Sample cookie keys: ['ak_bmsc', 'bm_sz']
+  Γ£à PASS
+
+============================================================
+  TEST 2 ΓÇö FII/DII Fetcher
+============================================================
+  Γ¥î FAIL ΓÇö fetch() must return a FiiDiiData
+
+============================================================
+  TEST 3 ΓÇö Signal Calculation (unit test)
+============================================================
+  _net_to_signal: 6 threshold checks Γ£ô
+  Scenario A: FII 2344 + DII 1689 = combined 4033 ΓåÆ strong_bullish Γ£ô
+  Scenario B: FII -3200 + DII -1100 = combined -4300 ΓåÆ strong_bearish Γ£ô
+  _combined_net_to_signal: 7 boundary checks Γ£ô
+  Γ£à PASS
+
+============================================================
+  TEST 4 ΓÇö Earnings Fetcher
+============================================================
+  Tickers searched: 10
+  Events found:     0
+  (No upcoming earnings in next 10 days ΓÇö OK for off-season)
+  Γ£à PASS
+
+============================================================
+  TEST 5 ΓÇö Earnings Risk Classification (unit test)
+============================================================
+  Spec cases: days 2ΓåÆHIGH, 4ΓåÆMEDIUM, 8ΓåÆLOW, 15ΓåÆNONE Γ£ô
+  Boundary checks: 0,1,3,5,6,10,11 days Γ£ô
+  Γ£à PASS
+
+============================================================
+  TEST 6 ΓÇö Setup Blocking
+============================================================
+  HIGH risk (2d) ΓåÆ BLOCKED Γ£ô
+  MEDIUM risk (4d) ΓåÆ NOT blocked Γ£ô
+  Γ¥î FAIL ΓÇö AttributeError: 'NoneType' object has no attribute 'get'
+
+============================================================
+  TEST 7 ΓÇö Morning Brief Integration
+============================================================
+  Generating morning brief (skip_claude=True)...
+  ΓÜá∩╕Å  Brief error: 'UserProfile' object has no attribute 'display_name'
+  FII/DII:          None (NSE unavailable)
+  Earnings events:  0
+  Setups:           0
+  No HIGH-earnings-risk stocks in setups Γ£ô
+
+  Message preview (first 300 chars):
+  ≡ƒîà <b>Good morning Vijay!</b>
+
+Markets open in 25 minutes. Here's your brief.
+
+
+<b>Market Mood:</b> Unknown
+
+<b>Your Portfolio:</b>
+No open positions. Full buying power Γé╣50,000.
+
+<b>Today's Setups:</b>
+None today. No setups met quality threshold.
+
+Good luck today. Trade with discipline. ≡ƒÖÅ
+  Γ£à PASS
+
+============================================================
+  TEST 8 ΓÇö Full Pipeline Integration (M1 ΓåÆ M4 ΓåÆ M6)
+============================================================
+  Running M1 data pipeline...
+  Γ¥î FAIL ΓÇö DataFetchError: [DataFetchError] Source: KiteConnect ΓÇö Unexpected error fetching VIX and indices: KiteAuthError: [KiteAuthError] Kite access token expired or invalid ΓÇö daily re-authentication required. Complete the login flow:
+  1. Open this URL in browser: https://kite.zerodha.com/connect/login?api_key=gzem2leocygdb726&v=3
+  2. Log in with Zerodha credentials.
+  3. Copy the request_token from the redirect URL.
+  4. Call: kite_auth_manager.set_access_token_from_request_token('<token>'). Review logs for root cause. VIX is mandatory ΓÇö pipeline cannot proceed.
+
+============================================================
+  RESULTS SUMMARY
+============================================================
+  Γ£à  1 Nse Session
+  Γ¥î  2 Fii Dii Fetcher ΓÇö fetch() must return a FiiDiiData
+  Γ£à  3 Signal Calculation
+  Γ£à  4 Earnings Fetcher
+  Γ£à  5 Risk Classification
+  Γ¥î  6 Setup Blocking ΓÇö AttributeError: 'NoneType' object has no attribute 'get'
+  Γ£à  7 Morning Brief
+  Γ¥î  8 Full Pipeline ΓÇö DataFetchError: [DataFetchError] Source: KiteConnect ΓÇö Unexpected error fetching VIX and indices: KiteAuthError: [KiteAuthError] Kite access token expired or invalid ΓÇö daily re-authentication required. Complete the login flow:
+  1. Open this URL in browser: https://kite.zerodha.com/connect/login?api_key=gzem2leocygdb726&v=3
+  2. Log in with Zerodha credentials.
+  3. Copy the request_token from the redirect URL.
+  4. Call: kite_auth_manager.set_access_token_from_request_token('<token>'). Review logs for root cause. VIX is mandatory ΓÇö pipeline cannot proceed.
+
+  Total: 5 passed, 3 failed out of 8 tests
+============================================================

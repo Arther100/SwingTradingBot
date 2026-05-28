@@ -27,6 +27,8 @@ from typing import Optional
 from pydantic import BaseModel, Field
 from zoneinfo import ZoneInfo
 
+from module1_data_layer.models import EarningsEvent, EarningsRisk, FiiDiiData
+
 IST = ZoneInfo("Asia/Kolkata")
 
 
@@ -139,6 +141,10 @@ class SetupSummary(BaseModel):
     exit_strategy: Optional[str] = Field(
         default=None,
         description="How to exit",
+    )
+    earnings_risk: Optional[EarningsRisk] = Field(
+        default=None,
+        description="Upcoming earnings risk for this stock",
     )
 
 
@@ -367,6 +373,18 @@ class MorningBrief(ReportMetadata):
     advisor_note: Optional[str] = Field(
         default=None,
         description="Personal advisor note to Vijay",
+    )
+
+    # FII/DII institutional flow (from M1)
+    fii_dii: Optional[FiiDiiData] = Field(
+        default=None,
+        description="Today's FII/DII institutional flow data",
+    )
+
+    # Upcoming earnings calendar (from M1)
+    earnings_calendar: list[EarningsEvent] = Field(
+        default_factory=list,
+        description="Earnings events in next 10 days for tracked tickers",
     )
 
     # Telegram message text (pre-formatted HTML)

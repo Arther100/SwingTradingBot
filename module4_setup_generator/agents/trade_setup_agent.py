@@ -137,16 +137,40 @@ class TradeSetupAgent(SwingAdvisorBaseAgent):
         ))
 
         # ── Step 2: Screen stocks ──
+        # Build earnings calendar lookup from MarketData (ticker → EarningsEvent)
+        earnings_calendar: dict = {
+            e.ticker.upper(): e for e in (market_data.earnings_events or [])
+        }
+
+        # FII/DII confidence adjustment for this run
+        fii_dii_adj = stock_screener.get_fii_dii_adjustment(market_data.fii_dii)
+
         candidates = stock_screener.screen(
             market_data=market_data,
             max_candidates=config.max_candidates,
             specific_tickers=sf.tickers,
+            earnings_calendar=earnings_calendar if earnings_calendar else None,
+        )
+
+        # Build earnings risk map for setup cards (MEDIUM/LOW/NONE per candidate)
+        earnings_risk_map = stock_screener.build_earnings_risk_map(
+            candidates, earnings_calendar if earnings_calendar else None
         )
 
         # Record skipped stocks from screening
         screened_tickers = {c.ticker for c in candidates}
         for stock in market_data.stocks:
             if stock.ticker not in screened_tickers:
+                # Check if skipped due to earnings block
+                event = earnings_calendar.get(stock.ticker.upper())
+                if event and event.risk_level.value == "HIGH":
+                    skipped.append(SkippedSetup(
+                        ticker=stock.ticker,
+                        skip_reason=(
+                            f"EARNINGS BLOCKED — {event.advisor_warning[:80]}"
+                        ),
+                    ))
+                    continue
                 skip_reason = stock_screener.get_skip_reason(stock)
                 if skip_reason:
                     skipped.append(SkippedSetup(
@@ -154,10 +178,20 @@ class TradeSetupAgent(SwingAdvisorBaseAgent):
                         skip_reason=skip_reason,
                     ))
 
+        fii_note = (
+            f", FII/DII adj: {fii_dii_adj:+.1f}"
+            if fii_dii_adj != 0.0 else ""
+        )
+        earnings_blocked_count = sum(
+            1 for e in earnings_calendar.values()
+            if e.risk_level.value == "HIGH"
+        )
         self.log_reasoning(2, (
             f"Screened {len(market_data.stocks)} stocks → "
             f"{len(candidates)} candidates, "
-            f"{len(skipped)} skipped"
+            f"{len(skipped)} skipped, "
+            f"{earnings_blocked_count} earnings-blocked"
+            f"{fii_note}"
         ))
 
         if not candidates:
@@ -182,6 +216,8 @@ class TradeSetupAgent(SwingAdvisorBaseAgent):
                 sf=sf,
                 market_data=market_data,
                 claude_reasoning_fn=claude_reasoning_fn,
+                fii_dii_adj=fii_dii_adj,
+                earnings_risk_map=earnings_risk_map,
             )
 
             if setup_result is None:
@@ -225,6 +261,8 @@ class TradeSetupAgent(SwingAdvisorBaseAgent):
         sf: SetupFilter,
         market_data: MarketData,
         claude_reasoning_fn: Optional[Any] = None,
+        fii_dii_adj: float = 0.0,
+        earnings_risk_map: Optional[dict] = None,
     ) -> Optional[TradeSetup | SkippedSetup]:
         """Process a single stock candidate through steps 3-8.
 
@@ -286,15 +324,28 @@ class TradeSetupAgent(SwingAdvisorBaseAgent):
         sector_mood = self._get_sector_mood(stock.sector, analysis)
         rr_decimal = self._parse_rr_ratio(levels.risk_reward_ratio)
 
-        confidence = confidence_scorer.score(
+        base_confidence = confidence_scorer.score(
             stock=stock,
             india_vix=market_data.india_vix or 15.0,
             sector_mood=sector_mood,
             risk_reward_ratio=rr_decimal,
         )
 
+        # Apply FII/DII signal adjustment (+0.5 or -1.5)
+        confidence = round(
+            max(1.0, min(10.0, base_confidence + fii_dii_adj)), 2
+        )
+
+        # Apply MEDIUM earnings penalty (-2.0 on confidence)
+        earnings_event = (earnings_risk_map or {}).get(stock.ticker)
+        if earnings_event and earnings_event.risk_level.value == "MEDIUM":
+            confidence = round(max(1.0, confidence - 2.0), 2)
+
         self.log_reasoning(5, (
-            f"{ticker}: confidence={confidence}, "
+            f"{ticker}: base={base_confidence}, "
+            f"fii_adj={fii_dii_adj:+.1f}, "
+            f"earnings_adj={'\u22122.0' if earnings_event and earnings_event.risk_level.value == 'MEDIUM' else '0'}, "
+            f"final confidence={confidence}, "
             f"sector_mood={sector_mood}, "
             f"volume={stock.volume_signal.value}"
         ))
@@ -370,6 +421,7 @@ class TradeSetupAgent(SwingAdvisorBaseAgent):
             cot_reasoning="\n".join(self.reasoning_log),
             advisor_flag=flag_value,
             volume_signal=stock.volume_signal.value if stock.volume_signal else None,
+            earnings_risk=(earnings_risk_map or {}).get(stock.ticker),
         )
 
         self.log_reasoning(8, (

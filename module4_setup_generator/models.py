@@ -37,6 +37,8 @@ from typing import Optional
 from pydantic import BaseModel, Field
 from zoneinfo import ZoneInfo
 
+from module1_data_layer.models import EarningsRisk
+
 IST = ZoneInfo("Asia/Kolkata")
 
 
@@ -231,6 +233,15 @@ class TradeSetup(BaseModel):
     volume_signal: Optional[str] = Field(
         default=None,
         description="M1 volume signal for this stock",
+    )
+    earnings_risk: Optional[EarningsRisk] = Field(
+        default=None,
+        description=(
+            "Earnings risk for this setup. "
+            "MEDIUM = results in 3-5 days (warn). "
+            "LOW = results in 6-10 days (note). "
+            "None = no upcoming earnings in 10 days."
+        ),
     )
 
     # ── Metadata ──

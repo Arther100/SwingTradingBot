@@ -26,6 +26,30 @@ from zoneinfo import ZoneInfo
 
 IST = ZoneInfo("Asia/Kolkata")
 
+# ── Re-exports from FII/DII and Earnings fetchers ────────────
+# These models are defined in the fetcher files (their natural home)
+# and imported here so all downstream modules can use a single
+# import path: `from module1_data_layer.models import FiiDiiData`
+from module1_data_layer.fetchers.fii_dii_fetcher import (
+    FiiDiiData,
+    FiiDiiSignal,
+)
+from module1_data_layer.fetchers.earnings_fetcher import (
+    EarningsEvent,
+    EarningsRisk,
+    EarningsRiskLevel,
+    classify_earnings_risk,
+)
+
+__all__ = [
+    "FiiDiiData",
+    "FiiDiiSignal",
+    "EarningsEvent",
+    "EarningsRisk",
+    "EarningsRiskLevel",
+    "classify_earnings_risk",
+]
+
 
 # ─────────────────────────────────────────────────────────────
 # Enums — Advisor-quality labels, never generic
@@ -752,6 +776,25 @@ class MarketData(BaseModel):
         description="Macro-economic events from FRED. Only high-impact items. Priority 6.",
     )
 
+    # ── Institutional Flow + Earnings Calendar (Priority 5 — trimmed with sectors) ──
+    fii_dii: Optional[FiiDiiData] = Field(
+        default=None,
+        description=(
+            "FII/DII institutional flow for today. "
+            "None if NSE was unreachable at fetch time. "
+            "Combined signal drives M4 confidence adjustment (+0.5 strong_bullish, "
+            "-1.5 strong_bearish)."
+        ),
+    )
+    earnings_events: list[EarningsEvent] = Field(
+        default_factory=list,
+        description=(
+            "Upcoming earnings results in the next 10 days for watchlist stocks. "
+            "M4 screener uses this to block (HIGH) or warn (MEDIUM/LOW) setups. "
+            "M6 morning brief shows this as the 'Earnings this week' section."
+        ),
+    )
+
     # ── Advisor Context ──
     advisor_morning_signal: str = Field(
         default="",
@@ -886,7 +929,22 @@ class MarketData(BaseModel):
         if self.estimate_tokens() <= max_tokens:
             return
 
-        # Step 5: All trimming exhausted — budget still exceeded
+        # Step 5: Remove earnings_events (M4/M6 re-fetch if needed)
+        self.earnings_events = []
+
+        if self.estimate_tokens() <= max_tokens:
+            return
+
+        # Step 6: Drop FII/DII advisor_note (keep signal fields only)
+        if self.fii_dii is not None:
+            self.fii_dii = self.fii_dii.model_copy(
+                update={"advisor_note": "", "market_impact": ""}
+            )
+
+        if self.estimate_tokens() <= max_tokens:
+            return
+
+        # Step 7: All trimming exhausted — budget still exceeded
         raise TokenBudgetError(
             estimated_tokens=self.estimate_tokens(), budget=max_tokens
         )
