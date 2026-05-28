@@ -74,9 +74,23 @@ class MemoryEngine:
     # USER PROFILE
     # ═══════════════════════════════════════════════════════
 
-    def get_user_profile(self, user_id: str = "XCU700") -> UserProfile | None:
-        """Get user profile from SQLite."""
-        return self._provider.get_user_profile(user_id)
+    def get_user_profile(self, user_id: str = "XCU700") -> UserProfile:
+        """Get user profile from SQLite. Creates default profile if not found."""
+        profile = self._provider.get_user_profile(user_id)
+        if profile is None:
+            logger.warning(
+                f"[MemoryEngine] No profile for {user_id}. "
+                f"Creating default profile."
+            )
+            default = UserProfile(
+                user_id=user_id,
+                name="Vijay",
+                capital=Decimal("50000.00"),
+                risk_tolerance="moderate",
+            )
+            self._provider.update_profile(default)
+            return default
+        return profile
 
     def get_or_create_profile(self, user_id: str = "XCU700") -> UserProfile:
         """Get profile, creating default if not found."""

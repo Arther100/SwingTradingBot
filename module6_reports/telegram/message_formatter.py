@@ -73,11 +73,21 @@ class MessageFormatter:
         # Market mood section
         parts.append(self._format_market_section(brief))
 
+        # FII/DII institutional flow section
+        fii_dii_section = self._format_fii_dii_section(brief)
+        if fii_dii_section:
+            parts.append(fii_dii_section)
+
         # Portfolio section
         parts.append(self._format_portfolio_section(brief))
 
         # Setups section
         parts.append(self._format_setups_section(brief))
+
+        # Upcoming earnings section
+        earnings_section = self._format_earnings_section(brief)
+        if earnings_section:
+            parts.append(earnings_section)
 
         # Lesson of the day
         if brief.lesson_of_day:
@@ -100,7 +110,7 @@ class MessageFormatter:
         """Format market mood section of morning brief."""
         lines: list[str] = []
 
-        mood_display = (brief.market_mood or "unknown").replace("_", " ").title()
+        mood_display = self._format_enum(brief.market_mood)
         lines.append(f"\n<b>Market Mood:</b> {mood_display}")
 
         # Nifty + VIX line
@@ -123,8 +133,8 @@ class MessageFormatter:
 
         # VIX gate
         if brief.vix_gate:
-            gate_emoji = "✅" if brief.vix_gate == "open" else "🚫"
-            lines.append(f"VIX Gate: {gate_emoji} {brief.vix_gate}")
+            gate_emoji = "✅" if str(brief.vix_gate).lower() in ("open", "vixgateresult.open") else "🚫"
+            lines.append(f"VIX Gate: {gate_emoji} {self._format_enum(brief.vix_gate)}")
 
         return "\n".join(lines)
 
@@ -186,6 +196,17 @@ class MessageFormatter:
             )
             lines.append(f"   💡 Confidence {setup.confidence:.1f}/10")
 
+            # Earnings risk warning inline
+            if setup.earnings_risk and setup.earnings_risk.has_upcoming_earnings:
+                risk_emojis = {"HIGH": "🔴", "MEDIUM": "🟠", "LOW": "🟡"}
+                risk_emoji = risk_emojis.get(setup.earnings_risk.risk_level.value, "⚪")
+                days = setup.earnings_risk.days_to_result
+                warning = setup.earnings_risk.advisor_warning or ""
+                lines.append(
+                    f"   {risk_emoji} Earnings in {days}d"
+                    + (f" — <i>{warning}</i>" if warning else "")
+                )
+
             if setup.shares > 0:
                 pos_str = self._fmt_rupees(setup.position_rupees) if setup.position_rupees else ""
                 shares_info = f"   📦 {setup.shares} shares"
@@ -206,7 +227,74 @@ class MessageFormatter:
             f"\n<b>Today's Lesson:</b> {concept_display}\n"
             f"{lesson.summary}"
         )
+    def _format_fii_dii_section(self, brief: MorningBrief) -> str:
+        """Format FII/DII institutional flow as Telegram HTML."""
+        if not brief.fii_dii:
+            return ""
 
+        f = brief.fii_dii
+        signal_display = f.combined_signal.value.replace("_", " ").title()
+        signal_emojis = {
+            "strong_bullish": "🟢🟢",
+            "bullish": "🟢",
+            "mild_bullish": "🟡",
+            "neutral": "⚪",
+            "mild_bearish": "🟠",
+            "bearish": "🔴",
+            "strong_bearish": "🔴🔴",
+        }
+        emoji = signal_emojis.get(f.combined_signal.value, "⚪")
+
+        fii_sign = "+" if f.fii_net >= 0 else ""
+        dii_sign = "+" if f.dii_net >= 0 else ""
+        combined_sign = "+" if f.combined_net >= 0 else ""
+
+        lines: list[str] = [
+            f"\n<b>Institutional Flows (FII/DII):</b> {emoji} {signal_display}",
+            f"  FII {fii_sign}₹{f.fii_net:,.0f} Cr | DII {dii_sign}₹{f.dii_net:,.0f} Cr",
+            f"  Combined: {combined_sign}₹{f.combined_net:,.0f} Cr",
+        ]
+
+        if f.consecutive_fii_buying_days and f.consecutive_fii_buying_days > 1:
+            lines.append(
+                f"  📅 FII buying {f.consecutive_fii_buying_days} days straight"
+            )
+        elif f.consecutive_fii_buying_days and f.consecutive_fii_buying_days < -1:
+            streak = abs(f.consecutive_fii_buying_days)
+            lines.append(f"  📅 FII selling {streak} days straight")
+
+        if f.advisor_note:
+            lines.append(f"  💬 {f.advisor_note}")
+
+        return "\n".join(lines)
+
+    def _format_earnings_section(self, brief: MorningBrief) -> str:
+        """Format upcoming earnings calendar as Telegram HTML."""
+        if not brief.earnings_calendar:
+            return ""
+
+        events = sorted(
+            brief.earnings_calendar, key=lambda e: e.days_to_result or 99
+        )
+
+        risk_emojis = {
+            "HIGH": "🔴",
+            "MEDIUM": "🟠",
+            "LOW": "🟡",
+            "NONE": "⚪",
+        }
+
+        lines: list[str] = ["\n<b>Earnings This Week:</b>"]
+        for ev in events[:6]:
+            emoji = risk_emojis.get(ev.risk_level.value, "⚪")
+            days_str = f"in {ev.days_to_result}d" if ev.days_to_result is not None else ""
+            lines.append(
+                f"  {emoji} <b>{ev.ticker}</b> — {ev.result_date} {days_str}"
+            )
+            if ev.advisor_warning:
+                lines.append(f"     <i>{ev.advisor_warning}</i>")
+
+        return "\n".join(lines)
     # ═══════════════════════════════════════════════════════
     # EVENING REVIEW
     # ═══════════════════════════════════════════════════════
@@ -234,7 +322,7 @@ class MessageFormatter:
         if review.india_vix is not None:
             parts.append(f"VIX {review.india_vix}")
         if review.market_mood:
-            mood_display = review.market_mood.replace("_", " ").title()
+            mood_display = self._format_enum(review.market_mood)
             parts.append(f"Mood: {mood_display}")
 
         # Top movers
@@ -432,6 +520,24 @@ class MessageFormatter:
     # ═══════════════════════════════════════════════════════
     # HELPERS
     # ═══════════════════════════════════════════════════════
+
+    @staticmethod
+    def _format_enum(value) -> str:
+        """Safely convert an enum or string value to a readable title string.
+
+        Handles cases like:
+            "VixGateResult.OPEN"  → "Open"
+            "cautious_bullish"    → "Cautious Bullish"
+            MarketMood.OPEN       → "Open"
+            None                  → "Unknown"
+        """
+        if value is None:
+            return "Unknown"
+        raw = str(value)
+        if "." in raw:
+            # Convert "VixGateResult.OPEN" → "OPEN" → "Open"
+            return raw.split(".")[-1].replace("_", " ").title()
+        return raw.replace("_", " ").title()
 
     @staticmethod
     def _fmt_rupees(amount: Decimal | float | int | None) -> str:

@@ -17,11 +17,13 @@ Usage:
 from __future__ import annotations
 
 import logging
+import os
 import time
 from datetime import datetime
 from decimal import Decimal
 from typing import Optional
 
+from dotenv import load_dotenv
 from zoneinfo import ZoneInfo
 
 from module6_reports.config import (
@@ -98,7 +100,14 @@ async def generate_morning_brief(
             )
 
         # ── Step 2: Fetch market data via M1 ──
-        market_data = await _fetch_market_data(tickers)
+        # Always reload env before any Kite API call so the fresh token is used
+        load_dotenv(override=True)
+        fresh_token = os.getenv("KITE_ACCESS_TOKEN")
+        logger.info(
+            f"[MorningBrief] Using token: "
+            f"{fresh_token[:10] if fresh_token else 'NONE'}..."
+        )
+        market_data = await _fetch_market_data(tickers, access_token=fresh_token)
         if market_data:
             brief.market_status = market_data.market_status.value
             brief.india_vix = market_data.india_vix
@@ -107,9 +116,14 @@ async def generate_morning_brief(
             brief.nifty_change_pct = market_data.nifty50_change_pct
             brief.sensex_value = market_data.sensex_value
             brief.sensex_change_pct = market_data.sensex_change_pct
+            # FII/DII and earnings from M1 (Upgrade 1)
+            brief.fii_dii = market_data.fii_dii
+            brief.earnings_calendar = market_data.earnings_events or []
             logger.info(
                 f"[MorningBrief] M1 data: VIX={market_data.india_vix}, "
-                f"Nifty={market_data.nifty50_value}"
+                f"Nifty={market_data.nifty50_value}, "
+                f"FII/DII={'present' if market_data.fii_dii else 'absent'}, "
+                f"Earnings={len(market_data.earnings_events or [])}"
             )
 
         # ── Step 3: Analyse market mood via M2 ──
@@ -205,7 +219,7 @@ async def _load_user_context(user_id: str):
         return None, None
 
 
-async def _fetch_market_data(tickers: list[str]):
+async def _fetch_market_data(tickers: list[str], access_token: str | None = None):
     """Fetch market data from M1 pipeline.
 
     Returns MarketData or None on failure.
@@ -223,6 +237,7 @@ async def _fetch_market_data(tickers: list[str]):
         market_data = await run_data_pipeline(
             tickers=tickers,
             config=config,
+            access_token=access_token,
         )
         return market_data
     except Exception as e:
@@ -327,6 +342,7 @@ def _convert_setups(trade_setups: list) -> list[SetupSummary]:
             setup_reasoning=ts.setup_reasoning,
             entry_trigger=getattr(ts, "entry_trigger", None),
             exit_strategy=getattr(ts, "exit_strategy", None),
+            earnings_risk=getattr(ts, "earnings_risk", None),
         )
         summaries.append(summary)
 
@@ -503,6 +519,21 @@ def _build_claude_prompt(
                 f"({stock.change_pct:+.2f}%) — {stock.advisor_flag.value}"
             )
 
+    # FII/DII institutional flow section
+    if brief.fii_dii:
+        f = brief.fii_dii
+        sections.append("\n== FII/DII FLOWS ==")
+        sections.append(f"FII Net: ₹{f.fii_net:,.0f} Cr → Signal: {f.fii_signal.value}")
+        sections.append(f"DII Net: ₹{f.dii_net:,.0f} Cr → Signal: {f.dii_signal.value}")
+        sections.append(f"Combined: ₹{f.combined_net:,.0f} Cr → {f.combined_signal.value}")
+        if f.consecutive_fii_buying_days and f.consecutive_fii_buying_days > 0:
+            sections.append(f"FII buying streak: {f.consecutive_fii_buying_days} consecutive days")
+        elif f.consecutive_fii_buying_days and f.consecutive_fii_buying_days < 0:
+            streak = abs(f.consecutive_fii_buying_days)
+            sections.append(f"FII selling streak: {streak} consecutive days")
+        if f.advisor_note:
+            sections.append(f"Advisor note: {f.advisor_note}")
+
     # Analysis section
     sections.append("\n== ANALYSIS ==")
     sections.append(f"Market Mood: {brief.market_mood}")
@@ -522,15 +553,31 @@ def _build_claude_prompt(
     sections.append("\n== SETUPS ==")
     if brief.top_setups:
         for s in brief.top_setups:
+            earnings_note = ""
+            if s.earnings_risk and s.earnings_risk.has_upcoming_earnings:
+                earnings_note = (
+                    f" [EARNINGS in {s.earnings_risk.days_to_result}d "
+                    f"— {s.earnings_risk.risk_level.value}]"
+                )
             sections.append(
                 f"  {s.ticker}: Entry ₹{s.entry_low}-{s.entry_high}, "
                 f"Target ₹{s.target}, Stop ₹{s.stop_loss}, "
                 f"R/R {s.risk_reward}, Confidence {s.confidence:.1f}/10, "
-                f"{s.shares} shares"
+                f"{s.shares} shares{earnings_note}"
             )
     else:
         reason = brief.no_setup_reason or "No qualifying setups"
         sections.append(f"  None — {reason}")
+
+    # Upcoming earnings section
+    if brief.earnings_calendar:
+        sections.append("\n== UPCOMING EARNINGS ==")
+        for ev in sorted(brief.earnings_calendar, key=lambda e: e.days_to_result or 99)[:8]:
+            sections.append(
+                f"  {ev.ticker} ({ev.company_name or ev.ticker}): "
+                f"{ev.result_date} in {ev.days_to_result} days "
+                f"[⚠️ {ev.risk_level.value}]"
+            )
 
     # Portfolio section
     sections.append("\n== PORTFOLIO ==")

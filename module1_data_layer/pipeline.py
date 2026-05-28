@@ -440,8 +440,9 @@ def _generate_morning_signal(market_data: MarketData) -> str:
 
 async def run_data_pipeline(
     tickers: list[str],
-    config: DataFetchConfig,
+    config: DataFetchConfig = DataFetchConfig(),
     agent: object | None = None,
+    access_token: str | None = None,
 ) -> MarketData:
     """Execute the complete 9-step data collection pipeline.
 
@@ -470,6 +471,22 @@ async def run_data_pipeline(
         PipelineHealthError: If health check finds critical failures.
         TokenBudgetError: If data exceeds budget after all trim steps.
     """
+    # Always read fresh token — never use a cached value from startup
+    import os
+    token = access_token or os.getenv("KITE_ACCESS_TOKEN")
+    if not token:
+        raise DataFetchError(
+            "KITE_ACCESS_TOKEN not found in environment"
+        )
+
+    # Update kite_auth_manager with this token so all fetchers see it
+    from kiteconnect import KiteConnect as _KiteConnect
+    from module1_data_layer.auth.kite_auth import kite_auth_manager
+    if kite_auth_manager._kite is not None:
+        kite_auth_manager._kite.set_access_token(token)
+        kite_auth_manager._is_validated = True
+    logger.info(f"[Pipeline] Kite initialized with token: {token[:10]}...")
+
     fetch_started_at = datetime.now(IST)
     pipeline_cache_key = f"pipeline:full:{'|'.join(sorted(tickers[:15]))}"
 
@@ -587,6 +604,10 @@ async def run_data_pipeline(
     sectors = []
     economic_events = []
 
+    from module1_data_layer.fetchers.fii_dii_fetcher import fii_dii_fetcher
+    from module1_data_layer.fetchers.earnings_fetcher import earnings_fetcher
+    from module1_data_layer.models import FiiDiiData, EarningsEvent
+
     async def _fetch_sectors_safe() -> list:
         try:
             return await fetch_sectors(config, stocks)
@@ -601,19 +622,44 @@ async def run_data_pipeline(
             logger.warning(f"Economic fetch failed (non-critical): {e}")
             return []
 
-    sector_result, economic_result = await asyncio.gather(
-        _fetch_sectors_safe(),
-        _fetch_economic_safe(),
+    async def _fetch_fii_dii_safe():
+        try:
+            return await fii_dii_fetcher.fetch()
+        except Exception as e:
+            logger.warning(f"FII/DII fetch failed (non-critical): {e}")
+            return None
+
+    async def _fetch_earnings_safe() -> list:
+        try:
+            events_map = await earnings_fetcher.fetch_upcoming(
+                tickers=tickers, days_ahead=10
+            )
+            return list(events_map.values())
+        except Exception as e:
+            logger.warning(f"Earnings calendar fetch failed (non-critical): {e}")
+            return []
+
+    sector_result, economic_result, fii_dii_result, earnings_result = (
+        await asyncio.gather(
+            _fetch_sectors_safe(),
+            _fetch_economic_safe(),
+            _fetch_fii_dii_safe(),
+            _fetch_earnings_safe(),
+        )
     )
     sectors = sector_result
     economic_events = economic_result
+    fii_dii_data: FiiDiiData | None = fii_dii_result
+    earnings_events_list: list[EarningsEvent] = earnings_result
 
     _log(
         step=5,
         thought=(
             f"Parallel fetch complete. "
             f"Sectors: {len(sectors)} fetched. "
-            f"Economic events: {len(economic_events)} fetched."
+            f"Economic events: {len(economic_events)} fetched. "
+            f"FII/DII: {'fetched (' + fii_dii_data.combined_signal.value + ')' if fii_dii_data else 'unavailable'}. "
+            f"Earnings calendar: {len(earnings_events_list)} events in next 10 days."
         ),
     )
 
@@ -653,6 +699,8 @@ async def run_data_pipeline(
         news=scored_news,
         sectors=sectors,
         economic_events=economic_events,
+        fii_dii=fii_dii_data,
+        earnings_events=earnings_events_list,
         is_real_data=True,
         timestamp=datetime.now(IST),
     )
@@ -721,7 +769,9 @@ async def run_data_pipeline(
         thought=(
             f"Pipeline complete. MarketData assembled with "
             f"{len(market_data.stocks)} stocks, {len(market_data.news)} news, "
-            f"{len(market_data.sectors)} sectors, {len(market_data.economic_events)} economic events. "
+            f"{len(market_data.sectors)} sectors, {len(market_data.economic_events)} economic events, "
+            f"FII/DII={'yes (' + market_data.fii_dii.combined_signal.value + ')' if market_data.fii_dii else 'unavailable'}, "
+            f"{len(market_data.earnings_events)} earnings events. "
             f"VIX={market_data.india_vix:.1f}, "
             f"status={market_data.market_status.value}, "
             f"freshness={market_data.data_freshness.value}, "

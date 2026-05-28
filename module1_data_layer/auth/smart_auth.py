@@ -158,9 +158,22 @@ class SmartKiteAuth:
             )
             return False
 
-        # Step 3: Reload .env so all modules see the new token
-        load_dotenv(override=True)
-        logger.info("[SmartAuth] .env reloaded with new access token")
+        # Step 3: Force reload into running process immediately
+        os.environ["KITE_ACCESS_TOKEN"] = access_token
+        load_dotenv(override=True)  # reload all .env vars
+
+        logger.info(
+            f"[SmartAuth] Token saved to .env and "
+            f"reloaded into process environment. "
+            f"New token: {access_token[:10]}..."
+        )
+
+        # Verify it worked
+        verify = os.getenv("KITE_ACCESS_TOKEN")
+        if verify == access_token:
+            logger.info("[SmartAuth] Token reload verified ✅")
+        else:
+            logger.error("[SmartAuth] Token reload FAILED ❌")
 
         # Step 4: Verify the new token works
         is_valid = kite_auth_manager.validate_token()
