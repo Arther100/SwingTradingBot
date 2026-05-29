@@ -81,7 +81,7 @@ async def generate_evening_review(
         profile, open_positions = _load_user_data(user_id)
         if profile:
             logger.info(
-                f"[EveningReview] Profile loaded: {profile.display_name}"
+                f"[EveningReview] Profile loaded: {profile.name}"
             )
 
         # ── Step 2: Fetch closing market data ──

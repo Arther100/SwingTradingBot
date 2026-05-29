@@ -95,7 +95,7 @@ async def generate_morning_brief(
             brief.total_capital = Decimal(str(profile.capital))
             brief.available_capital = Decimal(str(profile.capital))
             logger.info(
-                f"[MorningBrief] Profile loaded: {profile.display_name}, "
+                f"[MorningBrief] Profile loaded: {profile.name}, "
                 f"capital=₹{profile.capital:,.0f}"
             )
 
@@ -302,7 +302,7 @@ async def _generate_setups(market_data, analysis, profile):
 
         package = setup_engine.generate_setups(
             user_id=profile.user_id if profile else "XCU700",
-            display_name=profile.display_name if profile else "Vijay",
+            display_name=profile.name if profile else "Vijay",
             capital=capital,
             risk_tolerance=tolerance,
             max_setups=MAX_SETUPS_IN_BRIEF,
